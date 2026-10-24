@@ -23,7 +23,7 @@ prepare(){
   local version=1.14.4
   local tempdir
   tempdir=$(mktemp -d)
-  curl -fsSL --retry 2 "https://dl.sing-box.org/releases/v${version}/sing-box-${version}-linux-amd64.tar.gz" -o "$tempdir/sb.tar.gz"
+  curl -fsSL --retry 2 "https://github.com/SagerNet/sing-box/releases/download/v${version}/sing-box-${version}-linux-amd64.tar.gz" -o "$tempdir/sb.tar.gz"
   tar -xzf "$tempdir/sb.tar.gz" -C "$tempdir"
   install -m 755 "$tempdir/sing-box-${version}-linux-amd64/sing-box" /usr/local/bin/sing-box
   rm -rf "$tempdir"
