@@ -16,6 +16,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from core import (STATE, CONFIG, EXITS, RULES, CLASH, build_singbox,
                   parse_peer, clean_name, ConfigError, default_state)
+from routing import KEYS, read_routes, save_routes
 
 CLASH_SECRET = Path('/etc/vpn-proxy/clash-secret')
 LOCK = Path('/run/vpn-proxy-manager.lock')
@@ -62,16 +63,54 @@ def shell_service_action(verb):
     run(['systemctl',verb,'vpn-proxy-singbox.service'])
 
 
-def check_config(state):
+def check_config(state, rules_dir=None):
     c=build_singbox(state,secret())
     txt=json.dumps(c,ensure_ascii=False,indent=2)+'\n'
+    if rules_dir is not None:
+        for rule_set in c['route']['rule_set']:
+            if rule_set['tag'] in KEYS:
+                rule_set['path']=str(rules_dir/(rule_set['tag']+'.json'))
     fd,path=tempfile.mkstemp(prefix='.check-',suffix='.json',dir=str(CONFIG.parent))
     try:
-        with os.fdopen(fd,'w') as f:f.write(txt)
+        with os.fdopen(fd,'w',encoding='utf-8') as f:json.dump(c,f,ensure_ascii=False)
         run(['sing-box','check','-c',path],timeout=30)
     finally:
         Path(path).unlink(missing_ok=True)
     return txt
+
+
+def routes():
+    with locked():
+        return read_routes(RULES)
+
+
+def routes_save(data):
+    if not isinstance(data,dict) or set(data) != {'rules','revision'}:
+        raise ConfigError('Нужны списки правил и их текущая ревизия')
+    with locked():
+        state=get_state()
+        old=CONFIG.read_bytes() if CONFIG.exists() else None
+        old_mode=CONFIG.stat().st_mode & 0o777 if old is not None else 0o640
+        # A normal selector switch updates live state without rewriting config.
+        # Recovery must preserve that selection rather than its stale disk default.
+        if old is not None and state.get('active'):
+            previous=json.loads(old)
+            for outbound in previous.get('outbounds',[]):
+                if outbound.get('type')=='selector' and outbound.get('tag')=='exit-default':
+                    outbound['default']='exit-'+state['active']
+            old=(json.dumps(previous,ensure_ascii=False,indent=2)+'\n').encode('utf-8')
+        def restart():
+            run(['systemctl','restart','vpn-proxy-singbox.service'],timeout=20)
+            run(['systemctl','is-active','--quiet','vpn-proxy-singbox.service'],timeout=5)
+        def apply(txt):
+            atomic(CONFIG,txt,0o640)
+            restart()
+        def recover():
+            if old is None:CONFIG.unlink(missing_ok=True)
+            else:atomic(CONFIG,old.decode('utf-8'),old_mode)
+            restart()
+        return save_routes(RULES,data['rules'],data['revision'],
+                           lambda stage:check_config(state,stage),apply,recover)
 
 
 def apply_state(state):
@@ -312,6 +351,8 @@ def main():
     elif cmd=='activate':result=activate(sys.argv[2])
     elif cmd=='delete':result=delete(sys.argv[2],'--force' in sys.argv)
     elif cmd=='restore':result=restore()
+    elif cmd=='routes':result=routes()
+    elif cmd=='routes-save':result=routes_save(json.load(sys.stdin))
     elif cmd=='status':result=read_status()
     else:raise ConfigError('Неизвестная команда')
     print(json.dumps(result,ensure_ascii=False))

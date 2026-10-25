@@ -118,10 +118,10 @@ def build_singbox(state: dict, clash_secret: str='') -> dict:
                     'interrupt_exist_connections':True})
     rules = [ {'action':'sniff'},
         {'inbound':'diagnostic-ru','outbound':'ru'},
-        {'rule_set':'manual-ru','outbound':'ru'},
-        {'rule_set':'manual-exit', 'outbound':'exit-default'} if state['active'] else {'rule_set':'manual-exit','action':'reject'},
         {'rule_set':'domain-ru','outbound':'ru'},
         {'rule_set':'domain-exit','outbound':'exit-default'} if state['active'] else {'rule_set':'domain-exit','action':'reject'},
+        {'rule_set':'manual-ru','outbound':'ru'},
+        {'rule_set':'manual-exit', 'outbound':'exit-default'} if state['active'] else {'rule_set':'manual-exit','action':'reject'},
         {'rule_set':'geoip-ru','outbound':'ru'} ]
     if not state['active']:
         rules.append({'action':'reject'})
